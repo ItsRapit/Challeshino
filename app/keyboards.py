@@ -39,6 +39,14 @@ def duel_menu(random_cost: int = 5, friendly_cost: int = 20) -> InlineKeyboardMa
     return b.as_markup()
 
 
+def waiting_queue_keyboard(duel_id: int) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.button(text="❌ خروج از صف و برگشت سکه", callback_data=f"duel:cancel_queue:{duel_id}")
+    b.button(text="↩️ منوی اصلی", callback_data="nav:home")
+    b.adjust(1)
+    return b.as_markup()
+
+
 def genres_keyboard(duel_id: int, genres: list[str], selected: set[str], max_count: int) -> InlineKeyboardMarkup:
     b = InlineKeyboardBuilder()
     for g in genres:
@@ -49,7 +57,7 @@ def genres_keyboard(duel_id: int, genres: list[str], selected: set[str], max_cou
     return b.as_markup()
 
 
-def question_keyboard(duel_id: int, qid: int, options: list[str], hidden: set[int] | None = None) -> InlineKeyboardMarkup:
+def question_keyboard(duel_id: int, qid: int, options: list[str], hidden: set[int] | None = None, cost_5050: int = 0, cost_hint: int = 0) -> InlineKeyboardMarkup:
     hidden = hidden or set()
     b = InlineKeyboardBuilder()
     for i, opt in enumerate(options, 1):
@@ -57,8 +65,8 @@ def question_keyboard(duel_id: int, qid: int, options: list[str], hidden: set[in
             b.button(text="❌ حذف شد", callback_data="noop")
         else:
             b.button(text=f"{i}. {opt}", callback_data=f"ans:{duel_id}:{qid}:{i}")
-    b.button(text="50:50", callback_data=f"power:5050:{duel_id}:{qid}")
-    b.button(text="💡 کمک", callback_data=f"power:hint:{duel_id}:{qid}")
+    b.button(text=f"50:50 — {cost_5050} سکه", callback_data=f"power:5050:{duel_id}:{qid}")
+    b.button(text=f"💡 کمک — {cost_hint} سکه", callback_data=f"power:hint:{duel_id}:{qid}")
     b.button(text="🚩 گزارش سوال", callback_data=f"report:{duel_id}:{qid}")
     b.adjust(1, 1, 1, 1, 2, 1)
     return b.as_markup()

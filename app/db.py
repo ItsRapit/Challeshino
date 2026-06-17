@@ -16,8 +16,9 @@ CANONICAL_GENRES = [
     "فوتبال", "ورزش", "لوگو و سرگرمی", "غذا و نوشیدنی", "تکنولوژی", "تاریخ",
     "جغرافیا", "علم و دانش", "ادبیات", "سینما", "موسیقی", "هنر",
     "طبیعت و جاندار", "معما و هوش", "ادیان", "خودرو و وسایل نقلیه",
+    "زبان انگلیسی", "بازی‌های ویدیویی",
 ]
-GENRE_ALIASES = {"🎲 اطلاعات عمومی": "علم و دانش", "اطلاعات عمومی": "علم و دانش", "عمومی": "علم و دانش", "فناوری": "تکنولوژی", "طبیعت": "طبیعت و جاندار", "حیوانات": "طبیعت و جاندار", "خودرو": "خودرو و وسایل نقلیه", "ماشین": "خودرو و وسایل نقلیه", "سرگرمی": "لوگو و سرگرمی", "لوگو": "لوگو و سرگرمی", "غذا": "غذا و نوشیدنی", "هوش": "معما و هوش", "معما": "معما و هوش", "مذهبی": "ادیان"}
+GENRE_ALIASES = {"🎲 اطلاعات عمومی": "علم و دانش", "اطلاعات عمومی": "علم و دانش", "عمومی": "علم و دانش", "فناوری": "تکنولوژی", "طبیعت": "طبیعت و جاندار", "حیوانات": "طبیعت و جاندار", "خودرو": "خودرو و وسایل نقلیه", "ماشین": "خودرو و وسایل نقلیه", "سرگرمی": "لوگو و سرگرمی", "لوگو": "لوگو و سرگرمی", "غذا": "غذا و نوشیدنی", "هوش": "معما و هوش", "معما": "معما و هوش", "مذهبی": "ادیان", "انگلیسی": "زبان انگلیسی", "زبان": "زبان انگلیسی", "گیم": "بازی‌های ویدیویی", "بازی ویدیویی": "بازی‌های ویدیویی", "ویدیوگیم": "بازی‌های ویدیویی"}
 
 
 def normalize_genre_db(value: str | None) -> str:
@@ -327,8 +328,10 @@ class Database:
             "reward_coin_per_correct": ("10", "Coins for each correct answer"),
             "reward_xp_per_correct": ("15", "XP for each correct answer"),
             "winner_bonus_xp": ("20", "XP bonus for duel winner"),
-            "powerup_5050_cost": ("25", "Cost of 50:50"),
-            "powerup_hint_cost": ("35", "Cost of hint"),
+            "powerup_5050_cost": ("5", "Base cost of 50:50; doubles after each powerup use in a duel"),
+            "powerup_hint_cost": ("5", "Base cost of hint; doubles after each powerup use in a duel"),
+            "powerup_max_uses_per_duel": ("5", "Maximum total powerup uses per user per duel"),
+            "question_approval_reward_coins": ("20", "Coins rewarded to user when submitted question is approved"),
             "daily_question_limit": ("5", "Daily user submissions"),
             "referral_referrer_coins": ("50", "Referrer coin reward"),
             "referral_referrer_xp": ("50", "Referrer XP reward"),
@@ -370,6 +373,8 @@ class Database:
             ("streak_day_5_coins", "30", "25"),
             ("streak_day_6_coins", "40", "30"),
             ("streak_day_7_xp", "100", "0"),
+            ("powerup_5050_cost", "25", "5"),
+            ("powerup_hint_cost", "35", "5"),
         ]:
             row = await self.fetchone("SELECT value FROM settings WHERE key=?", (key,))
             if row and row["value"] == old_value:
@@ -598,6 +603,41 @@ class Database:
     async def active_duel_for_user(self, tg_id: int) -> aiosqlite.Row | None:
         return await self.fetchone("SELECT * FROM duels WHERE status IN ('waiting','invite_waiting','genre_selection','playing') AND (player1_id=? OR player2_id=?) ORDER BY id DESC LIMIT 1", (tg_id, tg_id))
 
+    async def clear_other_active_duels_for_users(self, user_ids: list[int], keep_duel_id: int | None = None) -> None:
+        if not user_ids:
+            return
+        placeholders = ",".join("?" for _ in user_ids)
+        params: list[Any] = list(user_ids) + list(user_ids)
+        sql = f"UPDATE duels SET status='cancelled', finished_at=? WHERE status IN ('waiting','invite_waiting','genre_selection','playing') AND (player1_id IN ({placeholders}) OR player2_id IN ({placeholders}))"
+        params = [now_iso()] + params
+        if keep_duel_id is not None:
+            sql += " AND id<>?"
+            params.append(keep_duel_id)
+        await self.execute_write(sql, params)
+
+    async def cancel_active_duels_with_refund(self) -> list[dict[str, Any]]:
+        rows = await self.fetchall("SELECT * FROM duels WHERE status IN ('waiting','invite_waiting','genre_selection','playing')")
+        random_cost = await self.get_int('random_duel_cost', 5)
+        friendly_cost = await self.get_int('friendly_duel_cost', 20)
+        results: list[dict[str, Any]] = []
+        for d in rows:
+            refunds: dict[int, int] = {}
+            if d['status'] == 'waiting':
+                refunds[d['player1_id']] = random_cost
+            elif d['status'] == 'invite_waiting':
+                refunds[d['player1_id']] = friendly_cost
+            elif d['invite_token']:
+                refunds[d['player1_id']] = friendly_cost
+            else:
+                refunds[d['player1_id']] = random_cost
+                if d['player2_id']:
+                    refunds[d['player2_id']] = random_cost
+            await self.execute_write("UPDATE duels SET status='cancelled', finished_at=? WHERE id=?", (now_iso(), d['id']))
+            for uid, amount in refunds.items():
+                await self.change_coins(uid, amount, 'maintenance_duel_refund', d['id'])
+            results.append({'duel_id': d['id'], 'refunds': refunds})
+        return results
+
     async def available_genres(self) -> list[str]:
         rows = await self.fetchall("""SELECT g.name FROM genres g
                                       WHERE g.is_active=1 AND EXISTS(
@@ -681,6 +721,20 @@ class Database:
     async def has_powerup(self, duel_id: int, qid: int, user_id: int, powerup: str) -> bool:
         return bool(await self.fetchone("SELECT 1 FROM powerup_usages WHERE duel_id=? AND question_id=? AND user_id=? AND powerup=?", (duel_id, qid, user_id, powerup)))
 
+    async def powerup_uses_in_duel(self, duel_id: int, user_id: int) -> int:
+        row = await self.fetchone("SELECT COUNT(*) c FROM powerup_usages WHERE duel_id=? AND user_id=?", (duel_id, user_id))
+        return int(row["c"] if row else 0)
+
+    async def powerup_costs_for_user(self, duel_id: int, user_id: int) -> dict[str, int]:
+        uses = await self.powerup_uses_in_duel(duel_id, user_id)
+        multiplier = 2 ** uses
+        return {
+            "uses": uses,
+            "5050": await self.get_int("powerup_5050_cost", 5) * multiplier,
+            "hint": await self.get_int("powerup_hint_cost", 5) * multiplier,
+            "max": await self.get_int("powerup_max_uses_per_duel", 5),
+        }
+
     async def finish_duel(self, duel_id: int) -> dict[str, Any]:
         duel = await self.get_duel(duel_id)
         if not duel:
@@ -695,19 +749,21 @@ class Database:
         for uid in [p1, p2]:
             u = await self.get_user(uid)
             lg = await self.get_user_league(int(u["cups"] if u else 0))
-            before[uid] = {"level": int(u["level"] if u else 1), "cups": int(u["cups"] if u else 0), "league_id": lg["id"] if lg else None, "league_name": lg["name"] if lg else "بدون لیگ", "league_order": int(lg["sort_order"] if lg else 0)}
+            before[uid] = {"level": int(u["level"] if u else 1), "coins": int(u["coins"] if u else 0), "xp": int(u["xp"] if u else 0), "cups": int(u["cups"] if u else 0), "league_id": lg["id"] if lg else None, "league_name": lg["name"] if lg else "بدون لیگ", "league_order": int(lg["sort_order"] if lg else 0)}
         winner = None
         if (stats[p1]["correct"], -stats[p1]["speed"]) > (stats[p2]["correct"], -stats[p2]["speed"]):
             winner = p1
         elif (stats[p2]["correct"], -stats[p2]["speed"]) > (stats[p1]["correct"], -stats[p1]["speed"]):
             winner = p2
         await self.execute_write("UPDATE duels SET status='finished', finished_at=?, winner_id=? WHERE id=?", (now_iso(), winner, duel_id))
+        is_random_duel = not bool(duel["invite_token"])
         coin_per = await self.get_int("reward_coin_per_correct", 10)
         xp_per = await self.get_int("reward_xp_per_correct", 15)
         bonus = await self.get_int("winner_bonus_xp", 20)
         for uid, st in stats.items():
             if st["correct"]:
-                await self.change_coins(uid, st["correct"] * coin_per, "duel_correct", duel_id)
+                if is_random_duel:
+                    await self.change_coins(uid, st["correct"] * coin_per, "duel_correct", duel_id)
                 await self.change_xp(uid, st["correct"] * xp_per, "duel_correct", duel_id)
             urow = await self.get_user(uid)
             league = await self.get_user_league(int(urow["cups"] if urow else 0))
@@ -726,14 +782,16 @@ class Database:
         for uid in [p1, p2]:
             u = await self.get_user(uid)
             lg = await self.get_user_league(int(u["cups"] if u else 0))
-            after = {"level": int(u["level"] if u else 1), "cups": int(u["cups"] if u else 0), "league_id": lg["id"] if lg else None, "league_name": lg["name"] if lg else "بدون لیگ", "league_order": int(lg["sort_order"] if lg else 0)}
+            after = {"level": int(u["level"] if u else 1), "coins": int(u["coins"] if u else 0), "xp": int(u["xp"] if u else 0), "cups": int(u["cups"] if u else 0), "league_id": lg["id"] if lg else None, "league_name": lg["name"] if lg else "بدون لیگ", "league_order": int(lg["sort_order"] if lg else 0)}
             transitions[uid] = {
                 "before": before[uid],
                 "after": after,
+                "rewards": {"coins": after["coins"] - before[uid]["coins"], "xp": after["xp"] - before[uid]["xp"], "cups": after["cups"] - before[uid]["cups"]},
                 "level_up": after["level"] > before[uid]["level"],
                 "league_promoted": after["league_order"] > before[uid]["league_order"],
                 "league_demoted": after["league_order"] < before[uid]["league_order"],
             }
+        await self.clear_other_active_duels_for_users([p1, p2], keep_duel_id=duel_id)
         await self.activate_referrals_for_players([p1, p2])
         return {"winner": winner, "stats": stats, "transitions": transitions}
 
@@ -955,16 +1013,36 @@ class Database:
         return int(cur.lastrowid)
 
     async def stats(self) -> dict[str, int]:
-        out = {}
-        for key, sql in {
-            "users": "SELECT COUNT(*) c FROM users",
-            "duels": "SELECT COUNT(*) c FROM duels",
-            "finished_duels": "SELECT COUNT(*) c FROM duels WHERE status='finished'",
-            "revenue_transactions": "SELECT COUNT(*) c FROM shop_transactions WHERE status='approved'",
-            "pending_questions": "SELECT COUNT(*) c FROM questions WHERE status='pending'",
-        }.items():
-            row = await self.fetchone(sql)
+        out: dict[str, int] = {}
+        now_t = tehran_now()
+        today_start = now_t.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC).isoformat(timespec="seconds")
+        week_start = (now_t - timedelta(days=7)).astimezone(UTC).isoformat(timespec="seconds")
+        month_start = (now_t - timedelta(days=30)).astimezone(UTC).isoformat(timespec="seconds")
+        year_start = (now_t - timedelta(days=365)).astimezone(UTC).isoformat(timespec="seconds")
+        for key, sql, params in [
+            ("users", "SELECT COUNT(*) c FROM users", ()),
+            ("new_users_today", "SELECT COUNT(*) c FROM users WHERE created_at>=?", (today_start,)),
+            ("duels", "SELECT COUNT(*) c FROM duels", ()),
+            ("finished_duels", "SELECT COUNT(*) c FROM duels WHERE status='finished'", ()),
+            ("games_today", "SELECT COUNT(*) c FROM duels WHERE status='finished' AND finished_at>=?", (today_start,)),
+            ("approved_transactions", "SELECT COUNT(*) c FROM shop_transactions WHERE status='approved'", ()),
+            ("pending_questions", "SELECT COUNT(*) c FROM questions WHERE status='pending'", ()),
+            ("total_questions", "SELECT COUNT(*) c FROM questions", ()),
+            ("user_questions", "SELECT COUNT(*) c FROM questions WHERE submitted_by IS NOT NULL AND (added_by IS NULL OR added_by<>submitted_by)", ()),
+            ("admin_questions", "SELECT COUNT(*) c FROM questions WHERE added_by IS NOT NULL", ()),
+            ("coins_generated", "SELECT COALESCE(SUM(amount),0) c FROM coin_events WHERE amount>0", ()),
+            ("coins_burned", "SELECT COALESCE(SUM(-amount),0) c FROM coin_events WHERE amount<0", ()),
+        ]:
+            row = await self.fetchone(sql, params)
             out[key] = int(row["c"] if row else 0)
+        tx_rows = await self.fetchall("SELECT final_price_label, original_price_label, created_at, reviewed_at FROM shop_transactions WHERE status='approved'")
+        for label, since in [("revenue_week", week_start), ("revenue_month", month_start), ("revenue_year", year_start)]:
+            total = 0
+            for tx in tx_rows:
+                ts = tx["reviewed_at"] or tx["created_at"]
+                if ts and ts >= since:
+                    total += self.parse_price_amount(tx["final_price_label"] or tx["original_price_label"] or "0")
+            out[label] = total
         return out
 
     async def log_admin(self, admin_id: int, action: str, target: str | None = None, details: str | None = None) -> None:

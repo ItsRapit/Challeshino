@@ -7,6 +7,7 @@ CANONICAL_GENRES = [
     "فوتبال", "ورزش", "لوگو و سرگرمی", "غذا و نوشیدنی", "تکنولوژی", "تاریخ",
     "جغرافیا", "علم و دانش", "ادبیات", "سینما", "موسیقی", "هنر",
     "طبیعت و جاندار", "معما و هوش", "ادیان", "خودرو و وسایل نقلیه",
+    "زبان انگلیسی", "بازی‌های ویدیویی",
 ]
 
 GENRE_ALIASES = {
@@ -28,6 +29,11 @@ GENRE_ALIASES = {
     "مذهبی": "ادیان",
     "هوش": "معما و هوش",
     "معما": "معما و هوش",
+    "انگلیسی": "زبان انگلیسی",
+    "زبان": "زبان انگلیسی",
+    "گیم": "بازی‌های ویدیویی",
+    "بازی ویدیویی": "بازی‌های ویدیویی",
+    "ویدیوگیم": "بازی‌های ویدیویی",
 }
 
 
@@ -67,6 +73,35 @@ def xp_progress_text(xp: int, current_level_required: int = 0, next_level_requir
 
 def to_english_digits(value: object) -> str:
     return str(value).translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789"))
+
+
+def league_with_emoji(name: str | None) -> str:
+    name = name or "بدون لیگ"
+    if "برنزی" in name:
+        return f"🥉 {name}"
+    if "نقره" in name:
+        return f"🥈 {name}"
+    if "طلایی" in name:
+        return f"🥇 {name}"
+    if "الماسی" in name:
+        return f"💎 {name}"
+    if "اسطوره" in name:
+        return f"👑 {name}"
+    return f"🏅 {name}"
+
+
+def rank_with_emoji(title: str | None) -> str:
+    title = title or "بدون رتبه"
+    mapping = {
+        "تازه‌کار": "🌱",
+        "دانشجو": "📘",
+        "استاد": "🎓",
+        "قهرمان": "🏆",
+        "اسطوره": "👑",
+        "افسانه‌ای": "🔥",
+        "مکس لول": "💫",
+    }
+    return f"{mapping.get(title, '🏅')} {title}"
 
 
 def normalize_genre(value: str | None) -> str:

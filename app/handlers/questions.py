@@ -113,7 +113,14 @@ async def q_review(call: CallbackQuery, db: Database, bot: Bot) -> None:
             await call.answer("سوال قبلاً بررسی شده یا وجود ندارد.", show_alert=True); return
         await db.log_admin(call.from_user.id, f"question_{action}", qid_s)
         if q['submitted_by']:
-            await bot.send_message(q['submitted_by'], "✅ سوال پیشنهادی شما تایید شد." if approve else "❌ سوال پیشنهادی شما رد شد.")
+            if approve:
+                reward = await db.get_int("question_approval_reward_coins", 20)
+                if reward > 0:
+                    await db.change_coins(q['submitted_by'], reward, "question_approved_reward")
+                updated = await db.get_user(q['submitted_by'])
+                await bot.send_message(q['submitted_by'], f"✅ سوال پیشنهادی شما تایید شد.\n🎁 پاداش: {reward} سکه\nموجودی فعلی: {updated['coins'] if updated else '-'} سکه")
+            else:
+                await bot.send_message(q['submitted_by'], "❌ سوال پیشنهادی شما رد شد.")
         await call.message.edit_reply_markup(reply_markup=None)
         await call.answer("ثبت شد.")
     except Exception:
