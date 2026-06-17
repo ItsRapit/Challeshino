@@ -48,6 +48,14 @@ async def start(message: Message, db: Database, state: FSMContext, bot: Bot, com
         await message.answer("خطایی رخ داد. لطفاً دوباره تلاش کن.")
 
 
+@router.message(Command("version"))
+async def version_command_public(message: Message) -> None:
+    await message.answer(
+        "🧩 نسخه کد فعال: <code>challeshino-2026-06-17-hotfix-powerup-stats-genres-v2</code>\n"
+        "اگر این پیام را می‌بینی یعنی کد جدید روی همین بات فعال است."
+    )
+
+
 @router.message(Command("help"))
 async def help_command(message: Message, db: Database) -> None:
     try:

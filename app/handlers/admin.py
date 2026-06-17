@@ -81,7 +81,7 @@ async def version_command(message: Message, db: Database) -> None:
         if not await require_admin_message(message, db):
             return
         await message.answer(
-            "🧩 نسخه کد فعال: <code>challeshino-2026-06-17-hotfix-powerup-stats-genres</code>\n"
+            "🧩 نسخه کد فعال: <code>challeshino-2026-06-17-hotfix-powerup-stats-genres-v2</code>\n"
             "اگر این پیام را نمی‌بینی، Railway هنوز نسخه جدید را deploy نکرده یا سرویس restart نشده است."
         )
     except Exception:

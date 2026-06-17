@@ -18,6 +18,8 @@ class AccessGuardMiddleware(BaseMiddleware):
                     if event.text and event.text.startswith("/start"):
                         await event.answer("برای بازی باید از طریق پیوی (چت خصوصی) با بات وارد شوید.")
                     return None
+                if event.text and event.text.split()[0].split('@')[0] == "/version":
+                    return await handler(event, data)
                 if db and event.from_user and await db.get_int("maintenance_mode", 0) == 1 and not await db.is_admin(event.from_user.id):
                     await event.answer(await db.get_setting("maintenance_text", "بات موقتاً در حال تعمیر است."))
                     return None
