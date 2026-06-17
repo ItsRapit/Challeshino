@@ -50,6 +50,8 @@ async def main() -> None:
         BotCommand(command="start", description="شروع"),
         BotCommand(command="admin", description="پنل ادمین"),
         BotCommand(command="guide", description="راهنمای کامندهای ادمین"),
+        BotCommand(command="version", description="نمایش نسخه فعال"),
+        BotCommand(command="sync_defaults", description="همگام‌سازی تنظیمات پیش‌فرض"),
         BotCommand(command="help", description="راهنما"),
         BotCommand(command="backup", description="دریافت بک‌آپ دیتابیس"),
         BotCommand(command="cancel", description="لغو عملیات جاری"),

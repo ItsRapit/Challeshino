@@ -75,6 +75,62 @@ async def backup_command(message: Message, db: Database) -> None:
         await message.answer("خطا در ساخت بک‌آپ.")
 
 
+@router.message(Command("version"))
+async def version_command(message: Message, db: Database) -> None:
+    try:
+        if not await require_admin_message(message, db):
+            return
+        await message.answer(
+            "🧩 نسخه کد فعال: <code>challeshino-2026-06-17-hotfix-powerup-stats-genres</code>\n"
+            "اگر این پیام را نمی‌بینی، Railway هنوز نسخه جدید را deploy نکرده یا سرویس restart نشده است."
+        )
+    except Exception:
+        logger.exception("Version command failed")
+        await message.answer("خطا در نمایش نسخه.")
+
+
+@router.message(Command("sync_defaults"))
+async def sync_defaults_command(message: Message, db: Database) -> None:
+    try:
+        if not await require_admin_message(message, db):
+            return
+        force = "force" in (message.text or "").lower().split()
+        await db.seed_defaults()
+        if force:
+            # Force only the latest gameplay defaults that users specifically asked for.
+            await db.set_setting("question_approval_reward_coins", "20")
+            await db.set_setting("powerup_5050_cost", "5")
+            await db.set_setting("powerup_hint_cost", "5")
+            await db.set_setting("powerup_max_uses_per_duel", "5")
+            await db.set_setting("streak_day_1_coins", "5")
+            await db.set_setting("streak_day_2_coins", "10")
+            await db.set_setting("streak_day_3_coins", "15")
+            await db.set_setting("streak_day_4_coins", "20")
+            await db.set_setting("streak_day_5_coins", "25")
+            await db.set_setting("streak_day_6_coins", "30")
+            await db.set_setting("streak_day_7_coins", "50")
+            await db.set_setting("streak_day_7_xp", "0")
+        genres = await db.all_genres()
+        p5050 = await db.get_setting("powerup_5050_cost", "?")
+        phint = await db.get_setting("powerup_hint_cost", "?")
+        pmax = await db.get_setting("powerup_max_uses_per_duel", "?")
+        qreward = await db.get_setting("question_approval_reward_coins", "?")
+        await db.log_admin(message.from_user.id, "sync_defaults", details="force" if force else "normal")
+        await message.answer(
+            "✅ همگام‌سازی پیش‌فرض‌ها انجام شد.\n\n"
+            f"ژانرها ({len(genres)}): {', '.join(genres)}\n\n"
+            f"پاداش تایید سوال: {qreward} سکه\n"
+            f"قیمت 50:50: {p5050}\n"
+            f"قیمت کمک: {phint}\n"
+            f"حداکثر پاورآپ در هر دست: {pmax}\n\n"
+            "اگر می‌خواهی مقادیر جدید حتماً جایگزین قبلی شوند، بزن:\n"
+            "<code>/sync_defaults force</code>"
+        )
+    except Exception:
+        logger.exception("Sync defaults failed")
+        await message.answer("خطا در sync defaults.")
+
+
 @router.message(Command("guide"))
 async def admin_guide(message: Message, db: Database) -> None:
     try:
